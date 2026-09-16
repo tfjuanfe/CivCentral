@@ -22,9 +22,9 @@ import ActionButton from "@/components/ActionButton";
 import DeleteButton from "@/components/DeleteButton";
 import StarButton from "@/components/StarButton";
 import ShareButton from "@/components/ShareButton";
-import CommentForm from "@/components/CommentForm";
+import Discussion from "@/components/Discussion";
+import ReportButton from "@/components/ReportButton";
 import { setDisputed, deleteEntry } from "@/app/actions/review";
-import { deleteComment } from "@/app/actions/social";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +55,13 @@ function Evidence({ items }: { items: EntryWithRelations["evidence"] }) {
 function Byline({
   entry,
   canEdit,
+  isOwn,
+  isLoggedIn,
 }: {
   entry: EntryWithRelations;
   canEdit: boolean;
+  isOwn: boolean;
+  isLoggedIn: boolean;
 }) {
   const stats = readingStats(entry.body);
   return (
@@ -81,6 +85,13 @@ function Byline({
       )}
       <Link href={`/entries/${entry.id}/history`}>Revision history</Link>
       {canEdit && <Link href={`/entries/${entry.id}/edit`}>Edit</Link>}
+      {!isOwn && (
+        <ReportButton
+          targetType="entry"
+          targetId={entry.id}
+          isLoggedIn={isLoggedIn}
+        />
+      )}
     </div>
   );
 }
@@ -141,7 +152,7 @@ export default async function EntryPage({
   const hasPublished =
     subject.records.length > 0 || subject.accounts.length > 0;
 
-  const [starCount, userStar, comments] = await Promise.all([
+  const [starCount, userStar] = await Promise.all([
     hasPublished
       ? prisma.star.count({ where: { subjectKey: sk } })
       : Promise.resolve(0),
@@ -150,13 +161,6 @@ export default async function EntryPage({
           where: { subjectKey_userId: { subjectKey: sk, userId: user.id } },
         })
       : Promise.resolve(null),
-    hasPublished
-      ? prisma.comment.findMany({
-          where: { subjectKey: sk },
-          include: { author: { select: { username: true } } },
-          orderBy: { createdAt: "asc" },
-        })
-      : Promise.resolve([]),
   ]);
   const userStarred = !!userStar;
 
@@ -263,7 +267,12 @@ export default async function EntryPage({
                     )}
 
                     <Evidence items={rec.evidence} />
-                    <Byline entry={rec} canEdit={canEdit} />
+                    <Byline
+                      entry={rec}
+                      canEdit={canEdit}
+                      isOwn={user?.id === rec.authorId}
+                      isLoggedIn={!!user}
+                    />
 
                     {isArchivist && (
                       <div className="byline" style={{ border: 0, paddingTop: 4 }}>
@@ -316,7 +325,12 @@ export default async function EntryPage({
                   ) : (
                     <p className="muted">No description written.</p>
                   )}
-                  <Byline entry={acc} canEdit={canEdit} />
+                  <Byline
+                    entry={acc}
+                    canEdit={canEdit}
+                    isOwn={user?.id === acc.authorId}
+                    isLoggedIn={!!user}
+                  />
                   {isArchivist && (
                     <div className="byline" style={{ border: 0, paddingTop: 4 }}>
                       <DeleteButton
@@ -335,52 +349,12 @@ export default async function EntryPage({
 
           {/* ---------- DISCUSSION ---------- */}
           {hasPublished && (
-            <section className="discussion">
-              <h2 className="section-title">
-                <Icon name="discussion" className="section-ico" /> Discussion (
-                {comments.length})
-              </h2>
-              {comments.length === 0 ? (
-                <p className="muted">No comments yet. Start the discussion.</p>
-              ) : (
-                <ul className="comment-list">
-                  {comments.map((c) => (
-                    <li key={c.id} className="comment">
-                      <div className="comment-head">
-                        <Link href={`/users/${c.author.username}`}>
-                          <strong>{c.author.username}</strong>
-                        </Link>
-                        <span
-                          className="muted"
-                          title={formatDateTime(c.createdAt)}
-                        >
-                          {formatRelative(c.createdAt)}
-                        </span>
-                      </div>
-                      <p className="comment-body">{c.body}</p>
-                      {(user?.id === c.authorId || isArchivist) && (
-                        <div className="comment-actions">
-                          <ActionButton
-                            action={deleteComment.bind(null, c.id)}
-                            className="link-button"
-                            confirm="Delete this comment?"
-                          >
-                            Delete
-                          </ActionButton>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {user ? (
-                <CommentForm subjectKey={sk} />
-              ) : (
-                <p className="muted">
-                  <Link href="/login">Log in</Link> to join the discussion.
-                </p>
-              )}
-            </section>
+            <Discussion
+              subjectKey={sk}
+              user={user}
+              commentsEnabled={anchor.event.commentsEnabled}
+              requireVerifiedEmail={anchor.event.ratingMode === "verified"}
+            />
           )}
         </div>
 
