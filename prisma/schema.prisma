@@ -26,11 +26,26 @@ model User {
   // (Postgres treats multiple NULLs as distinct, so absence is always allowed).
   email         String? @unique
   emailVerified Boolean @default(false)
-  passwordHash String
+  // Optional: Discord-authenticated accounts have no password.
+  passwordHash String?
+  // Set for accounts created via "Continue with Discord"; links the Discord user.
+  discordId    String?  @unique
   role         String   @default("contributor") // reader | contributor | archivist
   trusted      Boolean  @default(false)
   bio          String   @default("")
   createdAt    DateTime @default(now())
+
+  // Timestamp of the user's agreement to the Terms of Use + Privacy Policy.
+  // Null for accounts created before consent was collected.
+  termsAcceptedAt DateTime?
+
+  // Moderation. `bannedAt` set = currently banned. `bannedUntil` null while
+  // banned means the ban is permanent; a past `bannedUntil` means it lapsed
+  // (checked at read time, so no cron job is needed to expire it).
+  bannedAt     DateTime?
+  bannedUntil  DateTime?
+  banReason    String?
+  bannedByName String?
 
   entries            Entry[]                  @relation("EntryAuthor")
   revisions          Revision[]               @relation("RevisionEditor")
@@ -38,6 +53,8 @@ model User {
   comments           Comment[]
   verificationTokens EmailVerificationToken[]
   eventRatings       EventRating[]
+  commentVotes       CommentVote[]
+  hostedEvents       Event[]                  @relation("EventHost")
 }
 
 // Single-use email-verification tokens. Only a SHA-256 hash of the token is
@@ -75,11 +92,29 @@ model Event {
   description String    @default("")
   discordUrl  String    @default("")
 
+  // The member who runs this event. Set to the creator; null for events that
+  // predate hosting (those stay archivist-managed only).
+  hostId String?
+
+  // ---- Host-controlled page settings ----
+  // Whether the rating widget is offered on this event's page at all.
+  ratingsEnabled Boolean @default(true)
+  // Whether the aggregate score is shown to everyone. When false, raters still
+  // see their own rating but the average/count is host + archivist only.
+  ratingsPublic Boolean @default(true)
+  // Whether a verified email is required to rate or comment HERE. Hosts may
+  // relax it for their own page; contributing entries always requires one.
+  requireVerifiedEmail Boolean @default(true)
+  // Whether the discussion thread accepts new comments.
+  commentsEnabled Boolean @default(true)
+
   server  Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  host    User?         @relation("EventHost", fields: [hostId], references: [id], onDelete: SetNull)
   entries Entry[]
   ratings EventRating[]
 
   @@index([serverId])
+  @@index([hostId])
 }
 
 model Entry {
@@ -164,10 +199,64 @@ model Comment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  votes  CommentVote[]
 
   @@index([subjectKey])
   @@index([createdAt])
+}
+
+// One up/downvote per user per comment. Re-casting the same direction clears
+// the vote; casting the opposite flips it. The score is derived by summing
+// `value`, so there is no denormalized counter to drift.
+model CommentVote {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  value     Int // 1 (up) | -1 (down)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([commentId])
+}
+
+// A user-filed report about a comment or an entry, reviewed by archivists.
+// Like AuditLog this has NO foreign-key relations and stores denormalized
+// snapshots, so a report (and the evidence in it) survives the reported
+// content being deleted — which is exactly what happens when it's actioned.
+model Report {
+  id         String @id @default(cuid())
+  targetType String // comment | entry
+  targetId   String
+  // Snapshot of what was reported, captured at filing time.
+  targetExcerpt    String  @default("")
+  targetAuthorId   String?
+  targetAuthorName String  @default("")
+  // Where a reviewer can go to see it in context.
+  contextUrl String @default("")
+
+  reason   String // see REPORT_REASONS in src/lib/reports.ts
+  details  String @default("")
+
+  reporterId   String
+  reporterName String
+
+  status        String    @default("open") // open | resolved | dismissed
+  resolution    String? // note the archivist left when closing it
+  handledByName String?
+  handledAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  // One open report per person per target; re-reporting updates their own.
+  @@unique([targetType, targetId, reporterId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([targetType, targetId])
 }
 
 // A member's rating of a (concluded/ongoing) event, on a 1–5 Minecraft-tier
@@ -197,10 +286,10 @@ model RateLimit {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  action     String // approved | requested_changes | disputed | undisputed | rolled_back | deleted_entry | deleted_event | deleted_server
+  action     String // see AuditAction in src/lib/audit.ts
   actorId    String // who performed the action (archivist)
   actorName  String
-  targetType String // entry | event | server
+  targetType String // entry | event | server | comment | user
   targetId   String?
   targetName String
   authorName String? // original submitter (for entries)
