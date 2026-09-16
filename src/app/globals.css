@@ -1216,6 +1216,43 @@ fieldset legend {
   background: #4752c4 !important;
 }
 
+/* ---------- OAuth sign-in block ---------- */
+.oauth-block {
+  margin-bottom: 18px;
+}
+.oauth-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.oauth-divider span {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ---------- Linked accounts (account settings) ---------- */
+.connection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.connection-row > div {
+  min-width: 0;
+}
+
 /* ---------- Entry tools (export, etc.) ---------- */
 .entry-tools {
   display: flex;
