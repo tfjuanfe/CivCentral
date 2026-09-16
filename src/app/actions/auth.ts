@@ -21,9 +21,20 @@ export async function register(
   username: string,
   password: string,
   rawEmail?: string,
+  acceptedTerms?: boolean,
 ): Promise<AuthResult> {
   const rl = await rateLimit(`register:${clientIp()}`, 5, 3600);
   if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
+
+  // Consent is recorded server-side, not just enforced by the checkbox, so the
+  // timestamp we store is a real record of agreement.
+  if (!acceptedTerms) {
+    return {
+      ok: false,
+      error:
+        "Please accept the Terms of Use and Privacy Policy to create an account.",
+    };
+  }
 
   username = username.trim();
   if (!USERNAME_RE.test(username)) {
@@ -62,6 +73,7 @@ export async function register(
       trusted: false,
       email: email || null,
       emailVerified: false,
+      termsAcceptedAt: new Date(),
     },
   });
 
@@ -85,7 +97,7 @@ export async function login(
 
   username = username.trim();
   const user = await prisma.user.findUnique({ where: { username } });
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
     return { ok: false, error: "Invalid username or password." };
   }
 
