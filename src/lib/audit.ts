@@ -12,13 +12,26 @@ export type AuditAction =
   | "approved_server"
   | "approved_event"
   | "rejected_server"
-  | "rejected_event";
+  | "rejected_event"
+  | "deleted_comment"
+  | "resolved_report"
+  | "dismissed_report"
+  | "suspended_user"
+  | "banned_user"
+  | "reinstated_user";
 
 export interface AuditInput {
   action: AuditAction;
   actorId: string;
   actorName: string;
-  targetType: "entry" | "event" | "server" | "server_request" | "event_request";
+  targetType:
+    | "entry"
+    | "event"
+    | "server"
+    | "server_request"
+    | "event_request"
+    | "comment"
+    | "user";
   targetId?: string | null;
   targetName: string;
   authorName?: string | null;
@@ -54,4 +67,10 @@ export const AUDIT_LABELS: Record<AuditAction, string> = {
   approved_event: "Approved event",
   rejected_server: "Rejected server request",
   rejected_event: "Rejected event request",
+  deleted_comment: "Deleted comment",
+  resolved_report: "Actioned a report",
+  dismissed_report: "Dismissed a report",
+  suspended_user: "Suspended account",
+  banned_user: "Banned account",
+  reinstated_user: "Reinstated account",
 };
