@@ -1,5 +1,4 @@
 import "server-only";
-import { headers } from "next/headers";
 import { Resend } from "resend";
 
 // Basic, permissive email shape check. We rely on actual deliverability +
@@ -18,14 +17,14 @@ export function normalizeEmail(value: string): string {
 // fall back to the incoming request's forwarded host (works on Vercel).
 export function getBaseUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
-
-  const h = headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  if (host) return `${proto}://${host}`;
-
-  return "http://localhost:3000";
+  if (explicit) {
+    const url = new URL(explicit);
+    if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && url.protocol === "http:"))
+      throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS in production.");
+    return url.origin;
+  }
+  // Never construct verification links from attacker-controlled Host headers.
+  return process.env.NODE_ENV === "production" ? "https://wikiciv.xyz" : "http://localhost:3000";
 }
 
 const FROM = process.env.EMAIL_FROM?.trim() || "CivCentral <noreply@civcentral.com>";
@@ -40,6 +39,7 @@ export async function sendVerificationEmail(
   const apiKey = process.env.RESEND_API_KEY?.trim();
 
   if (!apiKey) {
+    if (process.env.NODE_ENV === "production") return { ok: false, error: "Email delivery is not configured. Please try again later." };
     console.log(`[email] (no RESEND_API_KEY) verification link for ${to}:\n${link}`);
     return { ok: true };
   }

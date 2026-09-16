@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { safeRedirect } from "@/lib/validation";
 import { login, register } from "@/app/actions/auth";
 
 export default function AuthForm({
@@ -36,7 +37,7 @@ export default function AuthForm({
       setBusy(false);
       return;
     }
-    router.push(next || "/");
+    router.push(safeRedirect(next));
     router.refresh();
   }
 

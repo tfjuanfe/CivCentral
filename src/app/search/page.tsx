@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: { q?: string };
+  searchParams: Promise<{ q?: string }>;
 }) {
-  const q = (searchParams.q ?? "").trim();
+  const q = ((await searchParams).q ?? "").trim();
   const ql = q.toLowerCase();
 
   let entries: Awaited<ReturnType<typeof findEntries>> = [];

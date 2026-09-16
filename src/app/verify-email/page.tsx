@@ -7,12 +7,12 @@ export const dynamic = "force-dynamic";
 // prefetchers don't silently consume the single-use token. The actual
 // verification happens when the user clicks the button, which POSTs to a
 // server action.
-export default function VerifyEmailPage({
+export default async function VerifyEmailPage({
   searchParams,
 }: {
-  searchParams: { token?: string };
+  searchParams: Promise<{ token?: string }>;
 }) {
-  const token = searchParams.token ?? "";
+  const token = (await searchParams).token ?? "";
 
   if (!token) {
     return (

@@ -7,15 +7,19 @@ import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import EntryCard from "@/components/EntryCard";
 import ProfileBioEditor from "@/components/ProfileBioEditor";
+import Avatar from "@/components/Avatar";
+import AvatarEditor from "@/components/AvatarEditor";
+import ContributionBadge from "@/components/ContributionBadge";
+import { canContributeNow } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }): Promise<Metadata> {
-  return { title: `${params.username} | CivCentral` };
+  return { title: `${(await params).username} | CivCentral` };
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -27,10 +31,10 @@ const ROLE_LABEL: Record<string, string> = {
 export default async function ProfilePage({
   params,
 }: {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }) {
   const profile = await prisma.user.findFirst({
-    where: { username: { equals: params.username, mode: "insensitive" } },
+    where: { username: { equals: (await params).username, mode: "insensitive" } },
     select: {
       id: true,
       username: true,
@@ -38,6 +42,7 @@ export default async function ProfilePage({
       trusted: true,
       eventHost: true,
       bio: true,
+      avatarUrl: true,
       createdAt: true,
     },
   });
@@ -68,9 +73,7 @@ export default async function ProfilePage({
       </nav>
 
       <div className="profile-head">
-        <span className="profile-avatar" aria-hidden>
-          {profile.username.charAt(0).toUpperCase()}
-        </span>
+        <Avatar username={profile.username} value={profile.avatarUrl} />
         <div>
           <h1 className="page-title" style={{ margin: 0 }}>
             {profile.username}
@@ -92,9 +95,12 @@ export default async function ProfilePage({
               {total} published contribution{total === 1 ? "" : "s"}
             </span>
             <span className="muted">Joined {formatDate(profile.createdAt)}</span>
+            <ContributionBadge count={total} />
           </div>
         </div>
       </div>
+
+      {isOwner && <AvatarEditor username={profile.username} initialValue={profile.avatarUrl} canUpload={canContributeNow(viewer)} />}
 
       <h2 className="section-title">
         <span className="cube-bullet" aria-hidden /> About

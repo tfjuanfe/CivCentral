@@ -27,10 +27,10 @@ two the app uses: `POSTGRES_PRISMA_URL` (pooled runtime) and
 under **Project → Settings → Environment Variables** (all environments):
 
 ```
-AUTH_SECRET = c464204e06117aea5093c4abbca023f9edbe424d45b4866476ed7c17e5f57a22
+AUTH_SECRET = <generate-a-new-random-secret-for-this-deployment>
 ```
 
-(Generate a fresh AUTH_SECRET anytime with:
+(Never reuse an example secret or a secret from Git history. Rotate any previously published value. Generate a fresh AUTH_SECRET with:
 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`)
 
 ## 3. Create the schema on the database

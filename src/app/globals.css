@@ -2455,3 +2455,23 @@ a.concept-card:hover {
     min-height: 38px;
   }
 }
+
+/* Profile pictures, contributor milestones, and device media uploads. */
+.profile-avatar { overflow: hidden; flex-shrink: 0; }
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-editor { margin-block: 20px; }
+.avatar-editor > .section-title { margin-top: 0; }
+.avatar-options { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 16px; }
+.avatar-option { display: grid; gap: 5px; justify-items: center; padding: 8px; border: 2px solid transparent; border-radius: 8px; color: inherit; background: transparent; cursor: pointer; font: inherit; font-size: .8rem; }
+.avatar-option span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 10px; font-size: 1.7rem; color: white; }
+.avatar-option[aria-pressed="true"] { border-color: currentColor; }
+.avatar-option:disabled { opacity: .6; cursor: wait; }
+.media-upload { display: grid; gap: 8px; margin-block: 16px; min-width: 0; }
+.media-upload input { width: 100%; max-width: 100%; min-width: 0; }
+.form-wrap fieldset { min-inline-size: 0; }
+.media-upload .hint { margin: 0; }
+.uploaded-media { display: block; max-width: 100%; max-height: 480px; border-radius: 6px; }
+.evidence-item .uploaded-media { width: 100%; }
+.contribution-progress { display: grid; gap: 8px; }
+.contribution-progress progress { width: min(100%, 360px); accent-color: #56795b; }
+.contribution-badge { width: fit-content; color: var(--text); border: 1px solid #9a7831; }

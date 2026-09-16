@@ -7,6 +7,7 @@ import { loadSubject, subjectKey, type EntryWithRelations } from "@/lib/subjects
 import { parseInfobox, type EntryType } from "@/lib/types";
 import { formatDateTime, formatRelative, readingStats } from "@/lib/format";
 import { TYPE_LABELS } from "@/lib/templates";
+import MediaPreview from "@/components/MediaPreview";
 import Markdown from "@/components/Markdown";
 import Infobox from "@/components/Infobox";
 import Icon from "@/components/Icon";
@@ -35,17 +36,10 @@ function Evidence({ items }: { items: EntryWithRelations["evidence"] }) {
       <h4>Evidence</h4>
       <div className="evidence-grid">
         {items.map((ev) => (
-          <a
-            key={ev.id}
-            href={ev.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="evidence-item"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={ev.url} alt={ev.caption ?? "Evidence"} loading="lazy" />
-            <div className="cap">{ev.caption || "View source"}</div>
-          </a>
+          <div key={ev.id} className="evidence-item">
+            <MediaPreview url={ev.url} caption={ev.caption ?? "Evidence"} />
+            <a href={ev.url} target="_blank" rel="noopener noreferrer" className="cap">{ev.caption || "View source"}</a>
+          </div>
         ))}
       </div>
     </div>
@@ -99,11 +93,11 @@ function Byline({
 export default async function EntryPage({
   params,
 }: {
-  params: { entryId: string };
+  params: Promise<{ entryId: string }>;
 }) {
   const [anchor, user] = await Promise.all([
     prisma.entry.findUnique({
-      where: { id: params.entryId },
+      where: { id: (await params).entryId },
       include: {
         author: { select: { id: true, username: true, trusted: true } },
         evidence: true,

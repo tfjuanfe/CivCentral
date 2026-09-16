@@ -1,5 +1,7 @@
 import "server-only";
 import { AwsClient } from "aws4fetch";
+import { MAX_MEDIA_BYTES } from "./media";
+import { readBoundedBody } from "./request-body";
 
 // Object storage on Cloudflare R2 (S3-compatible), reached with lightweight
 // SigV4 signing via aws4fetch — no heavy AWS SDK. This is the single seam every
@@ -19,7 +21,7 @@ const publicBase = process.env.R2_PUBLIC_BASE_URL?.replace(/\/+$/, "");
 // Whether storage is wired up. Callers (e.g. the upload route) should check this
 // and fail gracefully when uploads aren't configured rather than throwing.
 export function storageConfigured(): boolean {
-  return Boolean(accountId && accessKeyId && secretAccessKey && bucket);
+  return Boolean(accountId && accessKeyId && secretAccessKey && bucket && publicBase?.startsWith("https://"));
 }
 
 let client: AwsClient | null = null;
@@ -59,7 +61,7 @@ export async function putObject(
   const res = await awsClient().fetch(objectUrl(key), {
     method: "PUT",
     body,
-    headers: { "Content-Type": contentType },
+    headers: { "Content-Type": contentType, "Content-Disposition": "inline", "Cache-Control": "public, max-age=31536000, immutable" },
   });
   if (!res.ok) {
     throw new Error(`R2 upload failed (${res.status} ${res.statusText}).`);
@@ -73,4 +75,27 @@ export async function deleteObject(key: string): Promise<void> {
   if (!res.ok && res.status !== 404) {
     throw new Error(`R2 delete failed (${res.status} ${res.statusText}).`);
   }
+}
+
+// The browser sets Content-Length for a File body. Signing it prevents clients
+// from using a small-file authorization to store a larger object.
+export async function presignUpload(key: string, size: number): Promise<string> {
+  const url = new URL(objectUrl(key));
+  url.searchParams.set("X-Amz-Expires", "300");
+  const signed = await awsClient().sign(url.toString(), {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream", "Content-Length": String(size), "Content-Disposition": "attachment" },
+    aws: { signQuery: true, allHeaders: true },
+  });
+  return signed.url;
+}
+
+export async function readUploadedObject(key: string): Promise<Uint8Array> {
+  const res = await awsClient().fetch(objectUrl(key), { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`R2 read failed (${res.status}).`);
+  if (Number(res.headers.get("content-length")) > MAX_MEDIA_BYTES) {
+    await res.body?.cancel();
+    throw new Error("Uploaded object exceeds the size limit.");
+  }
+  return readBoundedBody(res.body, MAX_MEDIA_BYTES);
 }

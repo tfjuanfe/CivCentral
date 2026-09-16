@@ -16,11 +16,11 @@ export const dynamic = "force-dynamic";
 export default async function HistoryPage({
   params,
 }: {
-  params: { entryId: string };
+  params: Promise<{ entryId: string }>;
 }) {
   const [entry, user] = await Promise.all([
     prisma.entry.findUnique({
-      where: { id: params.entryId },
+      where: { id: (await params).entryId },
       include: {
         revisions: {
           include: { editor: { select: { username: true } } },

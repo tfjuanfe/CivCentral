@@ -14,11 +14,11 @@ export const dynamic = "force-dynamic";
 export default async function ServerPage({
   params,
 }: {
-  params: { serverId: string };
+  params: Promise<{ serverId: string }>;
 }) {
   const [server, user] = await Promise.all([
     prisma.server.findUnique({
-      where: { id: params.serverId },
+      where: { id: (await params).serverId },
       include: {
         events: {
           include: { _count: { select: { entries: true } } },

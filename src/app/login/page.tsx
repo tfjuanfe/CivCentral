@@ -5,21 +5,22 @@ import { getBaseUrl } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage({
+export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: { next?: string; error?: string };
+  searchParams: Promise<{ next?: string; error?: string }>;
 }) {
+  const params = await searchParams;
   // Same guard as the OAuth flow: a "next" arriving on the URL is attacker
   // input until it has been proven same-origin.
-  const next = safeRedirectPath(searchParams.next, getBaseUrl());
+  const next = safeRedirectPath(params.next, getBaseUrl());
 
   return (
     <>
       <h1 className="page-title">Log in</h1>
       <p className="lede">Log in to contribute records and accounts.</p>
-      {searchParams.error && (
-        <div className="alert alert-error form-narrow">{searchParams.error}</div>
+      {params.error && (
+        <div className="alert alert-error form-narrow">{params.error}</div>
       )}
       <AuthForm
         mode="login"
