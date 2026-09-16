@@ -34,20 +34,47 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export async function createSession(userId: string): Promise<void> {
+export interface SessionCookie {
+  name: string;
+  value: string;
+  options: {
+    httpOnly: true;
+    sameSite: "lax";
+    secure: boolean;
+    path: string;
+    maxAge: number;
+  };
+}
+
+// Build the signed session cookie as plain data.
+//
+// Server actions can call cookies().set() directly, but a route handler that
+// returns a NextResponse redirect (the OAuth callback) has to set the cookie on
+// that response instead. Returning the cookie rather than setting it lets both
+// use the exact same token and flags.
+export async function sessionCookie(userId: string): Promise<SessionCookie> {
   const token = await new SignJWT({ uid: userId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
     .sign(authSecret());
 
-  cookies().set(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  return {
+    name: COOKIE_NAME,
+    value: token,
+    options: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: MAX_AGE,
+    },
+  };
+}
+
+export async function createSession(userId: string): Promise<void> {
+  const { name, value, options } = await sessionCookie(userId);
+  cookies().set(name, value, options);
 }
 
 export function destroySession(): void {
