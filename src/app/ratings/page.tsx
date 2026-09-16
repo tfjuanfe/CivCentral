@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { canSeeEventRatings } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
 import { eventSubjectKey } from "@/lib/ratings";
 import { EventStatusBadge } from "@/components/Badges";
@@ -13,9 +14,10 @@ export const metadata: Metadata = { title: "Event ratings | WikiCiv" };
 export default async function RatingsPage() {
   const user = await getCurrentUser();
 
-  // Concluded events form the catalog of "past events" people can rate.
+  // Concluded events form the catalog of "past events" people can rate. Events
+  // whose host switched ratings off are left out of the board entirely.
   const events = await prisma.event.findMany({
-    where: { status: "concluded" },
+    where: { status: "concluded", ratingsEnabled: true },
     include: { server: { select: { id: true, name: true } } },
   });
 
@@ -73,13 +75,17 @@ export default async function RatingsPage() {
   const myByEvent = new Map(myRatings.map((r) => [r.eventId, r.value]));
 
   // Rated events first (highest average), then unrated, then most recent.
+  // A host can keep their score private: the event still appears and can still
+  // be rated, but it ranks as unrated and shows no number to outsiders.
   const ranked = events
     .map((e) => {
       const r = avgByEvent.get(e.id);
+      const visible = canSeeEventRatings(user, e);
       return {
         event: e,
-        average: r?.avg ?? null,
-        count: r?.count ?? 0,
+        visible,
+        average: visible ? (r?.avg ?? null) : null,
+        count: visible ? (r?.count ?? 0) : 0,
         comments: commentsByEvent.get(e.id) ?? 0,
         userValue: myByEvent.get(e.id) ?? 0,
       };
@@ -106,7 +112,7 @@ export default async function RatingsPage() {
       </p>
 
       <div className="list-stack">
-        {ranked.map(({ event, average, count, comments, userValue }, i) => (
+        {ranked.map(({ event, visible, average, count, comments, userValue }, i) => (
           <article key={event.id} className="card rating-row">
             <div className="rating-rank" aria-hidden>
               #{i + 1}
@@ -138,6 +144,8 @@ export default async function RatingsPage() {
                 initialCount={count}
                 initialUserValue={userValue}
                 isLoggedIn={!!user}
+                showAggregate={visible}
+                privateToYou={!event.ratingsPublic && visible}
               />
 
               <div className="rating-row-foot">

@@ -37,3 +37,13 @@ export function tierName(value: number): string {
 export function eventSubjectKey(eventId: string): string {
   return `event::${eventId}`;
 }
+
+// Every subject belongs to an event: an event thread is keyed `event::<id>` and
+// an entry subject is keyed `<eventId>::<type>::<name>`. Both forms start with
+// the event, which is what lets a host's page settings govern the discussion on
+// their event AND on the entries filed under it.
+export function eventIdFromSubjectKey(subjectKey: string): string | null {
+  const parts = subjectKey.split("::");
+  const id = parts[0] === "event" ? parts[1] : parts[0];
+  return id || null;
+}

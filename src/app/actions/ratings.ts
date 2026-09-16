@@ -3,44 +3,66 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { canContributeNow, VERIFY_EMAIL_MESSAGE } from "@/lib/permissions";
+import { canParticipateInEvent, canSeeEventRatings } from "@/lib/permissions";
 import { isValidRating } from "@/lib/ratings";
 import { rateLimit, retryMessage } from "@/lib/ratelimit";
 
 export type RateResult =
-  | { ok: true; average: number | null; count: number; userValue: number }
+  | {
+      ok: true;
+      // null when the host keeps the aggregate private — the rater still gets
+      // their own value back so the widget can show what they picked.
+      average: number | null;
+      count: number | null;
+      userValue: number;
+    }
   | { ok: false; error: string };
 
 // Set, change, or clear the current user's rating of an event. Passing the same
 // value they already gave clears it (toggle off), mirroring the star button.
-// Upcoming events can't be rated — there's nothing to judge yet.
+// Upcoming events can't be rated — there's nothing to judge yet — and the host
+// can switch ratings off for their event entirely.
 export async function rateEvent(
   eventId: string,
   value: number,
 ): Promise<RateResult> {
   const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "Log in to rate events." };
-  if (!canContributeNow(user))
-    return { ok: false, error: VERIFY_EMAIL_MESSAGE };
-  if (!isValidRating(value))
-    return { ok: false, error: "Invalid rating." };
-
-  const rl = await rateLimit(`rateevent:${user.id}`, 40, 60);
-  if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
+  if (!isValidRating(value)) return { ok: false, error: "Invalid rating." };
 
   const event = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      hostId: true,
+      ratingsEnabled: true,
+      ratingsPublic: true,
+      requireVerifiedEmail: true,
+    },
   });
   if (!event) return { ok: false, error: "That event no longer exists." };
+
+  if (!event.ratingsEnabled)
+    return {
+      ok: false,
+      error: "The host has turned ratings off for this event.",
+    };
+
+  const gate = canParticipateInEvent(user, event, "rate events");
+  if (!gate.ok) return gate;
+
+  const rl = await rateLimit(`rateevent:${user!.id}`, 40, 60);
+  if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
+
   if (event.status === "upcoming")
     return {
       ok: false,
       error: "You can only rate events that have started.",
     };
 
+  const userId = user!.id;
   const existing = await prisma.eventRating.findUnique({
-    where: { eventId_userId: { eventId, userId: user.id } },
+    where: { eventId_userId: { eventId, userId } },
   });
 
   let userValue = value;
@@ -49,8 +71,8 @@ export async function rateEvent(
     userValue = 0;
   } else {
     await prisma.eventRating.upsert({
-      where: { eventId_userId: { eventId, userId: user.id } },
-      create: { eventId, userId: user.id, value },
+      where: { eventId_userId: { eventId, userId } },
+      create: { eventId, userId, value },
       update: { value },
     });
   }
@@ -61,12 +83,14 @@ export async function rateEvent(
     _count: { value: true },
   });
 
+  const showAggregate = canSeeEventRatings(user, event);
+
   revalidatePath("/ratings");
   revalidatePath(`/events/${eventId}`);
   return {
     ok: true,
-    average: agg._avg.value,
-    count: agg._count.value,
+    average: showAggregate ? agg._avg.value : null,
+    count: showAggregate ? agg._count.value : null,
     userValue,
   };
 }
