@@ -338,6 +338,48 @@ h4 {
   border-radius: 6px;
   image-rendering: auto;
 }
+.footer-inner {
+  flex-wrap: wrap;
+}
+.footer-links {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 0.82rem;
+}
+
+/* ---------- Legal documents ---------- */
+.legal-doc {
+  max-width: 760px;
+}
+.legal-doc h2 {
+  margin-top: 30px;
+}
+.legal-doc h3 {
+  margin: 22px 0 6px;
+  font-size: 1rem;
+}
+.legal-doc p,
+.legal-doc li {
+  line-height: 1.65;
+}
+.legal-doc ul {
+  padding-left: 22px;
+}
+.legal-doc li {
+  margin-bottom: 7px;
+}
+.legal-doc code {
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.88em;
+}
+.legal-doc .table td {
+  vertical-align: top;
+  font-size: 0.9rem;
+}
 
 /* ---------- Breadcrumbs / headings ---------- */
 .breadcrumbs {
