@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Fraunces } from "next/font/google";
 import Image from "next/image";
+import Link from "next/link";
 import "./globals.css";
 import Header from "@/components/Header";
 import VerifyEmailBanner from "@/components/VerifyEmailBanner";
@@ -62,6 +63,12 @@ export default async function RootLayout({
               events: find what&apos;s worth your time, see honest ratings, and keep
               the stories that follow.
             </p>
+            <nav className="footer-links">
+              <Link href="/info">About</Link>
+              <Link href="/faq">FAQ</Link>
+              <Link href="/legal/terms">Terms of Use</Link>
+              <Link href="/legal/privacy">Privacy Policy</Link>
+            </nav>
           </div>
         </footer>
       </body>
