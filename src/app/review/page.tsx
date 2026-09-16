@@ -10,6 +10,7 @@ import { TypeBadge, LayerBadge, EventStatusBadge } from "@/components/Badges";
 import ActionButton from "@/components/ActionButton";
 import DeleteButton from "@/components/DeleteButton";
 import RequestChangesForm from "@/components/RequestChangesForm";
+import ModerationControls from "@/components/ModerationControls";
 import {
   approveEntry,
   setDisputed,
@@ -25,6 +26,17 @@ import {
 } from "@/app/actions/requests";
 
 export const dynamic = "force-dynamic";
+
+// A timed suspension lapses on its own, so "is this account suspended right
+// now" is a clock comparison, not just a status read.
+function isSuspendedRow(u: {
+  status: string;
+  suspendedUntil: Date | null;
+}): boolean {
+  if (u.status === "banned") return true;
+  if (u.status !== "suspended") return false;
+  return u.suspendedUntil === null || u.suspendedUntil > new Date();
+}
 
 export default async function ReviewPage() {
   const user = await getCurrentUser();
@@ -61,11 +73,14 @@ export default async function ReviewPage() {
           role: true,
           trusted: true,
           eventHost: true,
+          status: true,
+          suspendedUntil: true,
           _count: { select: { entries: true } },
         },
       }),
       prisma.server.findMany({ select: { id: true, name: true } }),
     ]);
+  const openReports = await prisma.report.count({ where: { status: "open" } });
   const serverNames = new Map(allServers.map((s) => [s.id, s.name]));
 
   return (
@@ -77,9 +92,19 @@ export default async function ReviewPage() {
         <h1 className="page-title" style={{ margin: 0 }}>
           Review queue
         </h1>
-        <Link href="/review/log" className="btn btn-sm btn-secondary">
-          <Icon name="clipboard" /> Activity log
-        </Link>
+        <span className="inline-actions">
+          <Link
+            href="/review/reports"
+            className={`btn btn-sm ${
+              openReports > 0 ? "btn-danger" : "btn-secondary"
+            }`}
+          >
+            ⚑ Reports{openReports > 0 ? ` (${openReports})` : ""}
+          </Link>
+          <Link href="/review/log" className="btn btn-sm btn-secondary">
+            <Icon name="clipboard" /> Activity log
+          </Link>
+        </span>
       </div>
       <p className="lede">
         Approve submissions or send them back to the author with feedback. If
@@ -273,6 +298,7 @@ export default async function ReviewPage() {
               <th>Entries</th>
               <th>Trusted</th>
               <th>Event host</th>
+              <th>Standing</th>
               <th></th>
             </tr>
           </thead>
@@ -302,6 +328,18 @@ export default async function ReviewPage() {
                     "no"
                   )}
                 </td>
+                <td>
+                  {isSuspendedRow(c) ? (
+                    <span className="badge badge-disputed">
+                      {c.status}
+                      {c.status === "suspended" && c.suspendedUntil
+                        ? ` until ${formatDate(c.suspendedUntil)}`
+                        : ""}
+                    </span>
+                  ) : (
+                    <span className="muted">ok</span>
+                  )}
+                </td>
                 <td style={{ textAlign: "right" }}>
                   {c.id !== user.id && c.role !== "archivist" && (
                     <span className="inline-actions">
@@ -317,6 +355,11 @@ export default async function ReviewPage() {
                       >
                         {c.eventHost ? "Revoke host" : "Make host"}
                       </ActionButton>
+                      <ModerationControls
+                        userId={c.id}
+                        username={c.username}
+                        suspended={isSuspendedRow(c)}
+                      />
                     </span>
                   )}
                 </td>
