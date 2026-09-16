@@ -16,6 +16,20 @@ export interface SessionUser {
   trusted: boolean;
   email: string | null;
   emailVerified: boolean;
+  // Ban state, already resolved against `bannedUntil` — `banned` is false once
+  // a timed ban has lapsed, so callers never re-check the clock.
+  banned: boolean;
+  banReason: string | null;
+  bannedUntil: Date | null;
+}
+
+// The host-controlled knobs on an event page. Kept as a standalone shape so
+// pages, forms, and server actions agree on what a host can change.
+export interface EventSettings {
+  ratingsEnabled: boolean;
+  ratingsPublic: boolean;
+  requireVerifiedEmail: boolean;
+  commentsEnabled: boolean;
 }
 
 export type Infobox = Record<string, string>;

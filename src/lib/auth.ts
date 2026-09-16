@@ -34,20 +34,44 @@ export async function verifyPassword(
   return bcrypt.compare(password, hash);
 }
 
-export async function createSession(userId: string): Promise<void> {
+export interface SessionCookie {
+  name: string;
+  value: string;
+  options: {
+    httpOnly: true;
+    sameSite: "lax";
+    secure: boolean;
+    path: string;
+    maxAge: number;
+  };
+}
+
+// Build the signed session cookie for a user, returned as data. Server actions
+// set it on the next/headers cookie store; OAuth route handlers set it directly
+// on the NextResponse redirect they return.
+export async function sessionCookie(userId: string): Promise<SessionCookie> {
   const token = await new SignJWT({ uid: userId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
     .sign(authSecret());
 
-  cookies().set(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: MAX_AGE,
-  });
+  return {
+    name: COOKIE_NAME,
+    value: token,
+    options: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: MAX_AGE,
+    },
+  };
+}
+
+export async function createSession(userId: string): Promise<void> {
+  const { name, value, options } = await sessionCookie(userId);
+  cookies().set(name, value, options);
 }
 
 export function destroySession(): void {
@@ -73,9 +97,18 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         trusted: true,
         email: true,
         emailVerified: true,
+        bannedAt: true,
+        bannedUntil: true,
+        banReason: true,
       },
     });
     if (!user) return null;
+
+    // A timed ban expires on its own: it is still recorded on the row, but we
+    // stop treating the user as banned once `bannedUntil` has passed.
+    const banned =
+      !!user.bannedAt &&
+      (user.bannedUntil === null || user.bannedUntil > new Date());
 
     return {
       id: user.id,
@@ -84,6 +117,9 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       trusted: user.trusted,
       email: user.email,
       emailVerified: user.emailVerified,
+      banned,
+      banReason: banned ? user.banReason : null,
+      bannedUntil: banned ? user.bannedUntil : null,
     };
   } catch {
     return null;
