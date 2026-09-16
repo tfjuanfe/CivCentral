@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
-import type { Role, SessionUser } from "./types";
+import type { AccountStatus, Role, SessionUser } from "./types";
 
 const COOKIE_NAME = "civcentral_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -101,9 +101,20 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         eventHost: true,
         email: true,
         emailVerified: true,
+        status: true,
+        suspendedUntil: true,
       },
     });
     if (!user) return null;
+
+    // A timed suspension expires on its own: the row still records it, but we
+    // stop treating the account as suspended once suspendedUntil has passed,
+    // so no scheduled job is needed to restore access. A ban never lapses.
+    const status = user.status as AccountStatus;
+    const suspended =
+      status === "banned" ||
+      (status === "suspended" &&
+        (user.suspendedUntil === null || user.suspendedUntil > new Date()));
 
     return {
       id: user.id,
@@ -113,6 +124,9 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       eventHost: user.eventHost,
       email: user.email,
       emailVerified: user.emailVerified,
+      status,
+      suspended,
+      suspendedUntil: suspended ? user.suspendedUntil : null,
     };
   } catch {
     return null;
