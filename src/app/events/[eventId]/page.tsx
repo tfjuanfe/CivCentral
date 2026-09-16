@@ -2,8 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { canContribute, canReview } from "@/lib/permissions";
-import { formatDate, formatDateTime } from "@/lib/format";
+import {
+  canContribute,
+  canManageEvent,
+  canReview,
+  canSeeEventRatings,
+} from "@/lib/permissions";
+import { formatDate } from "@/lib/format";
 import { eventSubjectKey } from "@/lib/ratings";
 import { ENTRY_TYPES, TYPE_ICONS, TYPE_LABELS } from "@/lib/templates";
 import {
@@ -14,11 +19,9 @@ import {
   HostBadge,
 } from "@/components/Badges";
 import DeleteButton from "@/components/DeleteButton";
-import ActionButton from "@/components/ActionButton";
 import RatingControl from "@/components/RatingControl";
-import CommentForm from "@/components/CommentForm";
+import Discussion from "@/components/Discussion";
 import { deleteEvent } from "@/app/actions/admin";
-import { deleteComment } from "@/app/actions/social";
 import type { EntryType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -43,6 +46,7 @@ export default async function EventPage({
       where: { id: params.eventId },
       include: {
         server: true,
+        host: { select: { username: true } },
         entries: {
           where: { status: "published" },
           include: { author: { select: { username: true } } },
@@ -56,11 +60,13 @@ export default async function EventPage({
   if (!event) notFound();
 
   // Ratings + discussion live on the event itself. Upcoming events can't be
-  // rated yet (nothing to judge), but everyone can still discuss them.
+  // rated yet (nothing to judge), and the host can switch ratings off or keep
+  // the score private; everyone can still discuss an open thread.
   const sk = eventSubjectKey(event.id);
-  const canRate = event.status !== "upcoming";
-  const isArchivist = canReview(user);
-  const [ratingAgg, userRating, comments] = await Promise.all([
+  const isManager = canManageEvent(user, event);
+  const showRatings = event.ratingsEnabled && event.status !== "upcoming";
+  const showAggregate = canSeeEventRatings(user, event);
+  const [ratingAgg, userRating] = await Promise.all([
     prisma.eventRating.aggregate({
       where: { eventId: event.id },
       _avg: { value: true },
@@ -71,11 +77,6 @@ export default async function EventPage({
           where: { eventId_userId: { eventId: event.id, userId: user.id } },
         })
       : Promise.resolve(null),
-    prisma.comment.findMany({
-      where: { subjectKey: sk },
-      include: { author: { select: { username: true } } },
-      orderBy: { createdAt: "asc" },
-    }),
   ]);
 
   // Group published entries into subjects (event already fixed, so key on type+name).
@@ -135,7 +136,7 @@ export default async function EventPage({
         <h1 className="page-title" style={{ margin: 0 }}>
           {event.name}
         </h1>
-        {canReview(user) && (
+        {isManager && (
           <span className="inline-actions">
             <Link
               href={`/events/${event.id}/edit`}
@@ -143,13 +144,22 @@ export default async function EventPage({
             >
               Edit event
             </Link>
-            <DeleteButton
-              action={deleteEvent.bind(null, event.id)}
-              redirectTo={`/servers/${event.serverId}`}
-              confirm={`Permanently delete the event "${event.name}" and ALL entries filed under it? This cannot be undone.`}
+            <Link
+              href={`/events/${event.id}/settings`}
+              className="btn btn-sm btn-secondary"
+              title="Ratings, discussion, and email requirements for this page"
             >
-              🗑 Delete event
-            </DeleteButton>
+              ⚙ Page settings
+            </Link>
+            {canReview(user) && (
+              <DeleteButton
+                action={deleteEvent.bind(null, event.id)}
+                redirectTo={`/servers/${event.serverId}`}
+                confirm={`Permanently delete the event "${event.name}" and ALL entries filed under it? This cannot be undone.`}
+              >
+                🗑 Delete event
+              </DeleteButton>
+            )}
           </span>
         )}
       </div>
@@ -168,17 +178,47 @@ export default async function EventPage({
         </p>
       )}
 
-      {canRate && (
+      {event.host && (
+        <p className="muted" style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
+          Run by{" "}
+          <Link href={`/users/${event.host.username}`}>
+            <strong>{event.host.username}</strong>
+          </Link>
+        </p>
+      )}
+
+      {showRatings ? (
         <div className="card rating-card">
           <strong>Rate this event</strong>
           <RatingControl
             eventId={event.id}
-            initialAverage={ratingAgg._avg.value}
-            initialCount={ratingAgg._count.value}
+            initialAverage={showAggregate ? ratingAgg._avg.value : null}
+            initialCount={showAggregate ? ratingAgg._count.value : 0}
             initialUserValue={userRating?.value ?? 0}
             isLoggedIn={!!user}
+            showAggregate={showAggregate}
+            privateToYou={!event.ratingsPublic && showAggregate}
           />
+          {event.requireVerifiedEmail && user && !user.emailVerified && (
+            <p className="hint" style={{ margin: "6px 0 0" }}>
+              The host requires a verified email to rate this event.
+            </p>
+          )}
         </div>
+      ) : (
+        isManager &&
+        !event.ratingsEnabled && (
+          <div className="card rating-card">
+            <strong>Ratings are off</strong>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              Nobody sees the rating widget on this page.{" "}
+              <Link href={`/events/${event.id}/settings`}>
+                Turn them back on
+              </Link>
+              .
+            </p>
+          </div>
+        )
       )}
 
       {canContribute(user) && (
@@ -266,46 +306,13 @@ export default async function EventPage({
         </aside>
       </div>
 
-      <section className="discussion">
-        <h2 className="section-title">💬 Discussion ({comments.length})</h2>
-        {comments.length === 0 ? (
-          <p className="muted">
-            No comments yet. Share your thoughts on this event.
-          </p>
-        ) : (
-          <ul className="comment-list">
-            {comments.map((c) => (
-              <li key={c.id} className="comment">
-                <div className="comment-head">
-                  <Link href={`/users/${c.author.username}`}>
-                    <strong>{c.author.username}</strong>
-                  </Link>
-                  <span className="muted">{formatDateTime(c.createdAt)}</span>
-                </div>
-                <p className="comment-body">{c.body}</p>
-                {(user?.id === c.authorId || isArchivist) && (
-                  <div className="comment-actions">
-                    <ActionButton
-                      action={deleteComment.bind(null, c.id)}
-                      className="link-button"
-                      confirm="Delete this comment?"
-                    >
-                      Delete
-                    </ActionButton>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        {user ? (
-          <CommentForm subjectKey={sk} />
-        ) : (
-          <p className="muted">
-            <Link href="/login">Log in</Link> to join the discussion.
-          </p>
-        )}
-      </section>
+      <Discussion
+        subjectKey={sk}
+        user={user}
+        commentsEnabled={event.commentsEnabled}
+        requireVerifiedEmail={event.requireVerifiedEmail}
+        emptyText="No comments yet. Share your thoughts on this event."
+      />
     </>
   );
 }

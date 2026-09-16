@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import Header from "@/components/Header";
 import VerifyEmailBanner from "@/components/VerifyEmailBanner";
+import SuspendedBanner from "@/components/SuspendedBanner";
 import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
@@ -27,7 +29,13 @@ export default async function RootLayout({
       </head>
       <body>
         <Header user={user} />
-        {user && !user.emailVerified && (
+        {user?.banned && (
+          <SuspendedBanner
+            reason={user.banReason}
+            until={user.bannedUntil ? user.bannedUntil.toISOString() : null}
+          />
+        )}
+        {user && !user.banned && !user.emailVerified && (
           <VerifyEmailBanner hasEmail={!!user.email} />
         )}
         <main className="site-main">{children}</main>
@@ -39,6 +47,12 @@ export default async function RootLayout({
               civilization events. Records hold the documented facts; Accounts
               hold the stories players tell.
             </p>
+            <nav className="footer-links">
+              <Link href="/info">About</Link>
+              <Link href="/faq">FAQ</Link>
+              <Link href="/legal/terms">Terms of Use</Link>
+              <Link href="/legal/privacy">Privacy Policy</Link>
+            </nav>
           </div>
         </footer>
       </body>

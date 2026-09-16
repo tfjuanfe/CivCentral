@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { canEditEntry, canReview } from "@/lib/permissions";
 import { loadSubject, subjectKey, type EntryWithRelations } from "@/lib/subjects";
 import { parseInfobox, type EntryType } from "@/lib/types";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { TYPE_LABELS } from "@/lib/templates";
 import Markdown from "@/components/Markdown";
 import Infobox from "@/components/Infobox";
@@ -20,9 +20,9 @@ import {
 import ActionButton from "@/components/ActionButton";
 import DeleteButton from "@/components/DeleteButton";
 import StarButton from "@/components/StarButton";
-import CommentForm from "@/components/CommentForm";
+import Discussion from "@/components/Discussion";
+import ReportButton from "@/components/ReportButton";
 import { setDisputed, deleteEntry } from "@/app/actions/review";
-import { deleteComment } from "@/app/actions/social";
 
 export const dynamic = "force-dynamic";
 
@@ -53,9 +53,13 @@ function Evidence({ items }: { items: EntryWithRelations["evidence"] }) {
 function Byline({
   entry,
   canEdit,
+  isOwn,
+  isLoggedIn,
 }: {
   entry: EntryWithRelations;
   canEdit: boolean;
+  isOwn: boolean;
+  isLoggedIn: boolean;
 }) {
   return (
     <div className="byline">
@@ -69,6 +73,13 @@ function Byline({
       <span>{formatDate(entry.createdAt)}</span>
       <Link href={`/entries/${entry.id}/history`}>Revision history</Link>
       {canEdit && <Link href={`/entries/${entry.id}/edit`}>Edit</Link>}
+      {!isOwn && (
+        <ReportButton
+          targetType="entry"
+          targetId={entry.id}
+          isLoggedIn={isLoggedIn}
+        />
+      )}
     </div>
   );
 }
@@ -129,7 +140,7 @@ export default async function EntryPage({
   const hasPublished =
     subject.records.length > 0 || subject.accounts.length > 0;
 
-  const [starCount, userStar, comments] = await Promise.all([
+  const [starCount, userStar] = await Promise.all([
     hasPublished
       ? prisma.star.count({ where: { subjectKey: sk } })
       : Promise.resolve(0),
@@ -138,13 +149,6 @@ export default async function EntryPage({
           where: { subjectKey_userId: { subjectKey: sk, userId: user.id } },
         })
       : Promise.resolve(null),
-    hasPublished
-      ? prisma.comment.findMany({
-          where: { subjectKey: sk },
-          include: { author: { select: { username: true } } },
-          orderBy: { createdAt: "asc" },
-        })
-      : Promise.resolve([]),
   ]);
   const userStarred = !!userStar;
 
@@ -248,7 +252,12 @@ export default async function EntryPage({
                     )}
 
                     <Evidence items={rec.evidence} />
-                    <Byline entry={rec} canEdit={canEdit} />
+                    <Byline
+                      entry={rec}
+                      canEdit={canEdit}
+                      isOwn={user?.id === rec.authorId}
+                      isLoggedIn={!!user}
+                    />
 
                     {isArchivist && (
                       <div className="byline" style={{ border: 0, paddingTop: 4 }}>
@@ -299,7 +308,12 @@ export default async function EntryPage({
                   ) : (
                     <p className="muted">No description written.</p>
                   )}
-                  <Byline entry={acc} canEdit={canEdit} />
+                  <Byline
+                    entry={acc}
+                    canEdit={canEdit}
+                    isOwn={user?.id === acc.authorId}
+                    isLoggedIn={!!user}
+                  />
                   {isArchivist && (
                     <div className="byline" style={{ border: 0, paddingTop: 4 }}>
                       <DeleteButton
@@ -318,48 +332,12 @@ export default async function EntryPage({
 
           {/* ---------- DISCUSSION ---------- */}
           {hasPublished && (
-            <section className="discussion">
-              <h2 className="section-title">
-                💬 Discussion ({comments.length})
-              </h2>
-              {comments.length === 0 ? (
-                <p className="muted">No comments yet. Start the discussion.</p>
-              ) : (
-                <ul className="comment-list">
-                  {comments.map((c) => (
-                    <li key={c.id} className="comment">
-                      <div className="comment-head">
-                        <Link href={`/users/${c.author.username}`}>
-                          <strong>{c.author.username}</strong>
-                        </Link>
-                        <span className="muted">
-                          {formatDateTime(c.createdAt)}
-                        </span>
-                      </div>
-                      <p className="comment-body">{c.body}</p>
-                      {(user?.id === c.authorId || isArchivist) && (
-                        <div className="comment-actions">
-                          <ActionButton
-                            action={deleteComment.bind(null, c.id)}
-                            className="link-button"
-                            confirm="Delete this comment?"
-                          >
-                            Delete
-                          </ActionButton>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {user ? (
-                <CommentForm subjectKey={sk} />
-              ) : (
-                <p className="muted">
-                  <Link href="/login">Log in</Link> to join the discussion.
-                </p>
-              )}
-            </section>
+            <Discussion
+              subjectKey={sk}
+              user={user}
+              commentsEnabled={anchor.event.commentsEnabled}
+              requireVerifiedEmail={anchor.event.requireVerifiedEmail}
+            />
           )}
         </div>
 
