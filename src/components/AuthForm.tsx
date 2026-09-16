@@ -8,9 +8,13 @@ import { login, register } from "@/app/actions/auth";
 export default function AuthForm({
   mode,
   next,
+  // The button only appears when the server has Discord credentials set, so a
+  // half-configured deployment doesn't offer a flow that can only fail.
+  discordEnabled = false,
 }: {
   mode: "login" | "register";
   next: string;
+  discordEnabled?: boolean;
 }) {
   const router = useRouter();
   const [username, setUsername] = useState("");
@@ -37,7 +41,24 @@ export default function AuthForm({
   }
 
   return (
-    <form className="form-narrow" onSubmit={onSubmit}>
+    <div className="form-narrow">
+      {discordEnabled && (
+        <div className="oauth-block">
+          <a
+            href={`/api/auth/discord?next=${encodeURIComponent(next || "/")}`}
+            className="btn discord-btn oauth-btn"
+          >
+            <DiscordMark /> Continue with Discord
+          </a>
+          <div className="oauth-divider">
+            <span />
+            or {mode === "login" ? "log in" : "sign up"} with a username
+            <span />
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={onSubmit}>
       {error && <div className="alert alert-error">{error}</div>}
       <div className="field">
         <label htmlFor="username">Username</label>
@@ -93,6 +114,22 @@ export default function AuthForm({
           </span>
         )}
       </div>
-    </form>
+      </form>
+    </div>
+  );
+}
+
+// Inline so the button needs no network request and no icon-set entry.
+function DiscordMark() {
+  return (
+    <svg
+      viewBox="0 0 24 18"
+      width="20"
+      height="15"
+      aria-hidden
+      fill="currentColor"
+    >
+      <path d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A14 14 0 0 0 8.6.1 19.7 19.7 0 0 0 3.7 1.6C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.9 14.9 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.7 14.7 0 0 0 1.3 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.6-13.5ZM8.0 12.4c-1.2 0-2.1-1.1-2.1-2.4S6.8 7.6 8 7.6s2.2 1.1 2.1 2.4c0 1.3-.9 2.4-2.1 2.4Zm8 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.2 1.1 2.1 2.4c0 1.3-.9 2.4-2.1 2.4Z" />
+    </svg>
   );
 }

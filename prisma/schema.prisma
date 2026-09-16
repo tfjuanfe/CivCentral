@@ -26,7 +26,11 @@ model User {
   // (Postgres treats multiple NULLs as distinct, so absence is always allowed).
   email         String? @unique
   emailVerified Boolean @default(false)
-  passwordHash String
+  // Optional: an account created through Discord sign-in has no password until
+  // its owner sets one. Every code path that compares a password must treat
+  // null as "this account has no password login" rather than passing it to
+  // bcrypt.
+  passwordHash String?
   role         String   @default("contributor") // reader | contributor | archivist
   trusted      Boolean  @default(false)
   // Event hosts may submit servers/events for archivist review. Composable with

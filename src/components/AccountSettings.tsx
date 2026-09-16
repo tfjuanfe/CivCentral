@@ -2,12 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { changePassword, deleteAccount } from "@/app/actions/profile";
+import { changePassword, deleteAccount, unlinkDiscord } from "@/app/actions/profile";
 import Icon from "./Icon";
 
 type Msg = { ok: boolean; text: string } | null;
 
-function ChangePassword() {
+export interface DiscordLink {
+  linked: boolean;
+  username: string | null;
+}
+
+// `hasPassword` is false for accounts created through Discord sign-in. Those
+// are setting a first password rather than changing one, so there is no current
+// password to ask for.
+function ChangePassword({ hasPassword }: { hasPassword: boolean }) {
   const [pending, start] = useTransition();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -31,7 +39,12 @@ function ChangePassword() {
         setMsg({ ok: false, text: res.error });
         return;
       }
-      setMsg({ ok: true, text: "Password changed." });
+      setMsg({
+        ok: true,
+        text: hasPassword
+          ? "Password changed."
+          : "Password set. You can now log in with your username too.",
+      });
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -41,8 +54,17 @@ function ChangePassword() {
   return (
     <section className="card" style={{ marginBottom: 20 }}>
       <h2 className="section-title" style={{ marginTop: 0 }}>
-        <span className="cube-bullet" aria-hidden /> Change password
+        <span className="cube-bullet" aria-hidden />{" "}
+        {hasPassword ? "Change password" : "Set a password"}
       </h2>
+
+      {!hasPassword && (
+        <p className="muted" style={{ margin: "0 0 10px" }}>
+          You signed up with Discord, so this account has no password yet.
+          Setting one gives you a second way in — and it&apos;s required before
+          you can unlink Discord.
+        </p>
+      )}
 
       {msg && (
         <div
@@ -54,14 +76,18 @@ function ChangePassword() {
       )}
 
       <form className="field" style={{ maxWidth: 360 }} onSubmit={submit}>
-        <label htmlFor="cp-current">Current password</label>
-        <input
-          id="cp-current"
-          type="password"
-          autoComplete="current-password"
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-        />
+        {hasPassword && (
+          <>
+            <label htmlFor="cp-current">Current password</label>
+            <input
+              id="cp-current"
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+            />
+          </>
+        )}
         <label htmlFor="cp-next" style={{ marginTop: 10 }}>
           New password
         </label>
@@ -86,9 +112,11 @@ function ChangePassword() {
           <button
             className="btn btn-sm"
             type="submit"
-            disabled={pending || !current || !next || !confirm}
+            disabled={
+              pending || (hasPassword && !current) || !next || !confirm
+            }
           >
-            {pending ? "…" : "Update password"}
+            {pending ? "…" : hasPassword ? "Update password" : "Set password"}
           </button>
         </div>
       </form>
@@ -96,7 +124,110 @@ function ChangePassword() {
   );
 }
 
-function DeleteAccount() {
+// Link / unlink the Discord identity. Linking is a full OAuth round trip, so
+// it's a plain link to the initiation endpoint rather than a server action.
+function Connections({
+  discord,
+  hasPassword,
+}: {
+  discord: DiscordLink;
+  hasPassword: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<Msg>(null);
+
+  // Unlinking a passwordless account would remove the only way in, so the
+  // server refuses it. Disable the button too, and say why.
+  const canUnlink = discord.linked && hasPassword;
+
+  function unlink() {
+    if (
+      !window.confirm(
+        "Unlink Discord from this account? You'll log in with your username and password instead.",
+      )
+    )
+      return;
+    setMsg(null);
+    start(async () => {
+      const res = await unlinkDiscord();
+      if (!res.ok) {
+        setMsg({ ok: false, text: res.error });
+        return;
+      }
+      setMsg({ ok: true, text: "Discord unlinked." });
+      router.refresh();
+    });
+  }
+
+  return (
+    <section className="card" style={{ marginBottom: 20 }}>
+      <h2 className="section-title" style={{ marginTop: 0 }}>
+        <span className="cube-bullet" aria-hidden /> Connections
+      </h2>
+
+      {msg && (
+        <div
+          className={`alert ${msg.ok ? "alert-success" : "alert-error"}`}
+          style={{ margin: "8px 0" }}
+        >
+          {msg.text}
+        </div>
+      )}
+
+      <div className="connection-row">
+        <div>
+          <strong>Discord</strong>
+          <p className="muted" style={{ margin: "2px 0 0" }}>
+            {discord.linked ? (
+              <>
+                Linked
+                {discord.username ? (
+                  <>
+                    {" as "}
+                    <strong>{discord.username}</strong>
+                  </>
+                ) : null}
+                . You can sign in with Discord.
+              </>
+            ) : (
+              "Not linked. Link it to sign in with one click."
+            )}
+          </p>
+          {discord.linked && !hasPassword && (
+            <p className="hint" style={{ margin: "4px 0 0" }}>
+              Set a password above before unlinking — Discord is currently the
+              only way into this account.
+            </p>
+          )}
+        </div>
+
+        {discord.linked ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={unlink}
+            disabled={pending || !canUnlink}
+            title={
+              canUnlink ? undefined : "Set a password first"
+            }
+          >
+            {pending ? "…" : "Unlink"}
+          </button>
+        ) : (
+          <a
+            href="/api/auth/discord?mode=link&next=/me"
+            className="btn btn-sm discord-btn"
+          >
+            Link Discord
+          </a>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DeleteAccount({ hasPassword }: { hasPassword: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -108,7 +239,7 @@ function DeleteAccount() {
     e.preventDefault();
     setError(null);
     start(async () => {
-      const res = await deleteAccount(password);
+      const res = await deleteAccount(password, confirm);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -144,14 +275,18 @@ function DeleteAccount() {
               {error}
             </div>
           )}
-          <label htmlFor="da-password">Confirm your password</label>
-          <input
-            id="da-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          {hasPassword && (
+            <>
+              <label htmlFor="da-password">Confirm your password</label>
+              <input
+                id="da-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </>
+          )}
           <label htmlFor="da-confirm" style={{ marginTop: 10 }}>
             Type <strong>DELETE</strong> to confirm
           </label>
@@ -167,7 +302,9 @@ function DeleteAccount() {
             <button
               className="btn btn-sm btn-danger"
               type="submit"
-              disabled={pending || !password || confirm !== "DELETE"}
+              disabled={
+                pending || (hasPassword && !password) || confirm !== "DELETE"
+              }
             >
               {pending ? "…" : "Permanently delete"}
             </button>
@@ -191,11 +328,22 @@ function DeleteAccount() {
   );
 }
 
-export default function AccountSettings() {
+export default function AccountSettings({
+  hasPassword = true,
+  discord = { linked: false, username: null },
+  discordEnabled = false,
+}: {
+  hasPassword?: boolean;
+  discord?: DiscordLink;
+  discordEnabled?: boolean;
+}) {
   return (
     <>
-      <ChangePassword />
-      <DeleteAccount />
+      <ChangePassword hasPassword={hasPassword} />
+      {(discordEnabled || discord.linked) && (
+        <Connections discord={discord} hasPassword={hasPassword} />
+      )}
+      <DeleteAccount hasPassword={hasPassword} />
     </>
   );
 }

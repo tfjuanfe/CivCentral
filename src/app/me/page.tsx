@@ -8,6 +8,7 @@ import type { EntryType, Layer } from "@/lib/types";
 import { TypeBadge, LayerBadge, StatusBadge, DisputedTag } from "@/components/Badges";
 import EmailVerification from "@/components/EmailVerification";
 import AccountSettings from "@/components/AccountSettings";
+import { isDiscordConfigured } from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
 
@@ -99,11 +100,24 @@ export default async function MyContributionsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/me");
 
-  const entries = (await prisma.entry.findMany({
-    where: { authorId: user.id },
-    include: { event: { select: { id: true, name: true } } },
-    orderBy: { updatedAt: "desc" },
-  })) as unknown as MyEntry[];
+  const [entries, account] = await Promise.all([
+    prisma.entry.findMany({
+      where: { authorId: user.id },
+      include: { event: { select: { id: true, name: true } } },
+      orderBy: { updatedAt: "desc" },
+    }) as unknown as Promise<MyEntry[]>,
+    // Account settings need to know whether this account has a password at all
+    // and whether Discord is attached, so it can offer "set a password" instead
+    // of "change password" and refuse to strip the only way in.
+    prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        passwordHash: true,
+        discordId: true,
+        discordUsername: true,
+      },
+    }),
+  ]);
 
   const drafts = entries.filter((e) => e.status === "draft");
   const pending = entries.filter((e) => e.status === "pending");
@@ -167,7 +181,14 @@ export default async function MyContributionsPage() {
         </>
       )}
 
-      <AccountSettings />
+      <AccountSettings
+        hasPassword={!!account?.passwordHash}
+        discordEnabled={isDiscordConfigured()}
+        discord={{
+          linked: !!account?.discordId,
+          username: account?.discordUsername ?? null,
+        }}
+      />
     </>
   );
 }
