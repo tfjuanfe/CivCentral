@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { canReview } from "@/lib/permissions";
+import { canManageEvent, canReview } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import type { SessionUser } from "@/lib/types";
+import type { EventSettings, SessionUser } from "@/lib/types";
 
 export type AdminResult =
   | { ok: true; id: string }
@@ -84,6 +84,27 @@ export interface EventInput {
   status: "upcoming" | "ongoing" | "concluded";
   description: string;
   discordUrl: string;
+  // Username of the member who runs the event. Empty means "no host", which
+  // leaves the event archivist-managed. Archivists set this; the host then
+  // customizes the event page without needing archivist rights.
+  hostUsername?: string;
+}
+
+// Resolve the host username on an event form to a user id.
+// Returns `undefined` for the id when the name doesn't match an account.
+async function resolveHost(
+  hostUsername: string | undefined,
+): Promise<{ ok: true; hostId: string | null } | { ok: false; error: string }> {
+  const name = (hostUsername ?? "").trim();
+  if (!name) return { ok: true, hostId: null };
+
+  const host = await prisma.user.findUnique({
+    where: { username: name },
+    select: { id: true },
+  });
+  if (!host)
+    return { ok: false, error: `No account named "${name}" — check the spelling.` };
+  return { ok: true, hostId: host.id };
 }
 
 function parseDate(value: string): Date | null {
@@ -120,8 +141,8 @@ function validateEvent(input: EventInput): string | null {
 }
 
 export async function createEvent(input: EventInput): Promise<AdminResult> {
-  const gate = await ensureArchivist();
-  if (!gate.ok) return { ok: false, error: gate.error! };
+  const gate = await gateArchivist();
+  if (!gate.ok) return { ok: false, error: gate.error };
 
   const problem = validateEvent(input);
   if (problem) return { ok: false, error: problem };
@@ -130,6 +151,9 @@ export async function createEvent(input: EventInput): Promise<AdminResult> {
     where: { id: input.serverId },
   });
   if (!server) return { ok: false, error: "That server no longer exists." };
+
+  const host = await resolveHost(input.hostUsername);
+  if (!host.ok) return host;
 
   const event = await prisma.event.create({
     data: {
@@ -141,6 +165,9 @@ export async function createEvent(input: EventInput): Promise<AdminResult> {
       status: input.status,
       description: input.description.trim(),
       discordUrl: input.discordUrl.trim(),
+      // Default the host to the archivist creating it, so every new event has
+      // someone who can tune its page.
+      hostId: host.hostId ?? gate.user.id,
     },
   });
   revalidatePath("/");
@@ -149,15 +176,24 @@ export async function createEvent(input: EventInput): Promise<AdminResult> {
   return { ok: true, id: event.id };
 }
 
+// Edit an event's details. Open to its host as well as to archivists — but
+// only an archivist can hand the event to a different host.
 export async function updateEvent(
   id: string,
   input: EventInput,
 ): Promise<AdminResult> {
-  const gate = await ensureArchivist();
-  if (!gate.ok) return { ok: false, error: gate.error! };
+  const gate = await gateEventManager(id);
+  if (!gate.ok) return { ok: false, error: gate.error };
 
   const problem = validateEvent(input);
   if (problem) return { ok: false, error: problem };
+
+  let hostId: string | null | undefined;
+  if (input.hostUsername !== undefined && canReview(gate.user)) {
+    const host = await resolveHost(input.hostUsername);
+    if (!host.ok) return host;
+    hostId = host.hostId;
+  }
 
   const event = await prisma.event.update({
     where: { id },
@@ -169,6 +205,7 @@ export async function updateEvent(
       status: input.status,
       description: input.description.trim(),
       discordUrl: input.discordUrl.trim(),
+      ...(hostId === undefined ? {} : { hostId }),
     },
   });
   revalidatePath("/");
@@ -176,6 +213,54 @@ export async function updateEvent(
   revalidatePath(`/servers/${event.serverId}`);
   revalidatePath(`/events/${id}`);
   return { ok: true, id };
+}
+
+// Gate an action on "may manage THIS event" — its host, or any archivist.
+async function gateEventManager(
+  eventId: string,
+): Promise<
+  | { ok: true; user: SessionUser; event: { id: string; hostId: string | null } }
+  | { ok: false; error: string }
+> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "Log in to manage this event." };
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    select: { id: true, hostId: true },
+  });
+  if (!event) return { ok: false, error: "That event no longer exists." };
+  if (!canManageEvent(user, event))
+    return {
+      ok: false,
+      error: "Only this event's host or an archivist can change it.",
+    };
+  return { ok: true, user, event };
+}
+
+// Save the host-controlled page settings. Separate from updateEvent so the
+// settings page can't be used to rewrite an event's dates or description.
+export async function updateEventSettings(
+  eventId: string,
+  settings: EventSettings,
+): Promise<AdminResult> {
+  const gate = await gateEventManager(eventId);
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  await prisma.event.update({
+    where: { id: eventId },
+    data: {
+      ratingsEnabled: !!settings.ratingsEnabled,
+      ratingsPublic: !!settings.ratingsPublic,
+      requireVerifiedEmail: !!settings.requireVerifiedEmail,
+      commentsEnabled: !!settings.commentsEnabled,
+    },
+  });
+
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath(`/events/${eventId}/settings`);
+  revalidatePath("/ratings");
+  return { ok: true, id: eventId };
 }
 
 // Hard-delete an event and everything filed under it (cascades to entries,

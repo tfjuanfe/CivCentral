@@ -21,21 +21,27 @@ export interface EventFormInitial {
   status: EventStatusValue;
   description: string;
   discordUrl: string;
+  hostUsername: string;
 }
 
 export default function EventForm({
   mode,
   servers,
   initial,
+  // Only archivists may hand an event to a different host; a host editing
+  // their own event doesn't see the field.
+  canAssignHost = false,
 }: {
   mode: "create" | "edit";
   servers: ServerOption[];
   initial: EventFormInitial;
+  canAssignHost?: boolean;
 }) {
   const router = useRouter();
   const isEdit = mode === "edit";
 
   const [serverId, setServerId] = useState(initial.serverId);
+  const [hostUsername, setHostUsername] = useState(initial.hostUsername);
   const [name, setName] = useState(initial.name);
   const [theme, setTheme] = useState(initial.theme);
   const [startDate, setStartDate] = useState(initial.startDate);
@@ -59,6 +65,9 @@ export default function EventForm({
       status,
       description,
       discordUrl,
+      // Omitted entirely when this editor can't reassign the host, so the
+      // server leaves the existing host untouched.
+      ...(canAssignHost ? { hostUsername } : {}),
     };
     const res = isEdit
       ? await updateEvent(initial.id!, payload)
@@ -98,6 +107,26 @@ export default function EventForm({
           </select>
         )}
       </div>
+
+      {canAssignHost && (
+        <div className="field">
+          <label htmlFor="host">
+            Host <span className="hint">(username — optional)</span>
+          </label>
+          <input
+            id="host"
+            type="text"
+            value={hostUsername}
+            onChange={(e) => setHostUsername(e.target.value)}
+            placeholder="e.g. steve_builds"
+          />
+          <p className="hint" style={{ marginTop: 4 }}>
+            The host can edit this event and customize its page — ratings,
+            discussion, and whether a verified email is required — without being
+            an archivist. Leave blank to keep it archivist-only.
+          </p>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor="name">Event name</label>

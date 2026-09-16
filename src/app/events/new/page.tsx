@@ -42,6 +42,7 @@ export default async function NewEventPage({
       </p>
       <EventForm
         mode="create"
+        canAssignHost
         servers={servers.map((s) => ({ id: s.id, name: s.name }))}
         initial={{
           serverId: defaultServerId,
@@ -52,6 +53,7 @@ export default async function NewEventPage({
           status: "upcoming",
           description: "",
           discordUrl: "",
+          hostUsername: "",
         }}
       />
     </>
