@@ -11,12 +11,20 @@ export default function RatingControl({
   initialCount,
   initialUserValue,
   isLoggedIn,
+  // When false the host keeps the score private: the viewer can still rate and
+  // see their own tier, but not the average or how many people rated.
+  showAggregate = true,
+  // True when the viewer only sees the private score because they host the
+  // event or archive it — worth marking so they don't assume it's public.
+  privateToYou = false,
 }: {
   eventId: string;
   initialAverage: number | null;
   initialCount: number;
   initialUserValue: number; // 0 = not yet rated
   isLoggedIn: boolean;
+  showAggregate?: boolean;
+  privateToYou?: boolean;
 }) {
   const router = useRouter();
   const [average, setAverage] = useState(initialAverage);
@@ -43,8 +51,11 @@ export default function RatingControl({
       setError(res.error);
       return;
     }
-    setAverage(res.average);
-    setCount(res.count);
+    // The action returns nulls for the aggregate when the score is private.
+    if (res.average !== null || res.count !== null) {
+      setAverage(res.average);
+      setCount(res.count ?? 0);
+    }
     setUserValue(res.userValue);
     router.refresh();
   }
@@ -86,13 +97,20 @@ export default function RatingControl({
       </div>
 
       <div className="rating-summary muted">
-        {count === 0 ? (
+        {!showAggregate ? (
+          <span>
+            🔒 The host keeps this event&apos;s score private.
+            {userValue ? ` Your rating: ${tierName(userValue)}.` : ""}
+          </span>
+        ) : count === 0 ? (
           <span>Not yet rated{isLoggedIn ? ". Be the first." : "."}</span>
         ) : (
           <span>
+            {privateToYou && <span title="Not shown to other members">🔒 </span>}
             <strong style={{ color: avgTier?.color }}>{avgTier?.name}</strong>{" "}
             · {average?.toFixed(1)} avg from {count} rating
             {count === 1 ? "" : "s"}
+            {privateToYou && " (private)"}
           </span>
         )}
         {!isLoggedIn && (

@@ -5,6 +5,7 @@ import Link from "next/link";
 import "./globals.css";
 import Header from "@/components/Header";
 import VerifyEmailBanner from "@/components/VerifyEmailBanner";
+import SuspendedBanner from "@/components/SuspendedBanner";
 import CardSpotlight from "@/components/CardSpotlight";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -45,7 +46,15 @@ export default async function RootLayout({
       <body>
         <CardSpotlight />
         <Header user={user} />
-        {user && !user.emailVerified && (
+        {user?.suspended && (
+          <SuspendedBanner
+            status={user.status}
+            until={user.suspendedUntil ? user.suspendedUntil.toISOString() : null}
+          />
+        )}
+        {/* A suspended member can't contribute anyway, so don't also nag them
+            to verify an email they can't yet use. */}
+        {user && !user.suspended && !user.emailVerified && (
           <VerifyEmailBanner hasEmail={!!user.email} />
         )}
         <main className="site-main">{children}</main>

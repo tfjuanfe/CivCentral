@@ -104,7 +104,16 @@ model Event {
   ownerId           String?
   commentsEnabled   Boolean @default(true)
   discussionEnabled Boolean @default(true)
+  // Participation policy for this event's page. "verified" means taking part —
+  // rating or commenting — requires a confirmed email address; "open" lets any
+  // logged-in member join in. Submitting lore entries always needs a verified
+  // email regardless, so a host can only relax their own page.
   ratingMode        String  @default("open") // open | verified
+  // Whether the rating widget is offered at all, and whether the resulting
+  // score is public. With ratingsPublic off, raters still see their own rating
+  // but the average is the owner's and the archivists' to see.
+  ratingsEnabled    Boolean @default(true)
+  ratingsPublic     Boolean @default(true)
   ratingGuildId     String?
   ratingRoleId      String?
   // Host page personalization (F3/F7).
