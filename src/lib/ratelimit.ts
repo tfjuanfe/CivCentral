@@ -3,8 +3,8 @@ import { headers } from "next/headers";
 import { prisma } from "./db";
 
 // Best-effort client IP from proxy headers (Vercel sets x-forwarded-for).
-export function clientIp(): string {
-  const h = headers();
+export async function clientIp(): Promise<string> {
+  const h = await headers();
   const xff = h.get("x-forwarded-for");
   if (xff) return xff.split(",")[0].trim();
   return h.get("x-real-ip") ?? "unknown";
@@ -13,8 +13,8 @@ export function clientIp(): string {
 export type RateResult = { ok: true } | { ok: false; retryAfter: number };
 
 // Fixed-window limiter backed by the database, so the count is shared across
-// serverless instances. Fails open: if the limiter itself errors, the request
-// is allowed (availability over strictness for an internal hiccup).
+// serverless instances. Fail closed if the limiter is unavailable so login
+// and upload limits cannot silently disappear during a database error.
 export async function rateLimit(
   key: string,
   limit: number,
@@ -58,7 +58,8 @@ export async function rateLimit(
     }
     return { ok: true };
   } catch {
-    return { ok: true };
+    console.error("[ratelimit] Counter unavailable");
+    return { ok: false, retryAfter: 60 };
   }
 }
 

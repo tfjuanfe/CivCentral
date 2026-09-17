@@ -10,8 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function NewEventPage({
   searchParams,
 }: {
-  searchParams: { serverId?: string };
+  searchParams: Promise<{ serverId?: string }>;
 }) {
+  const query = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/events/new");
   if (!canHostEvents(user)) redirect("/");
@@ -32,8 +33,8 @@ export default async function NewEventPage({
   }
 
   const validParam =
-    searchParams.serverId && servers.some((s) => s.id === searchParams.serverId)
-      ? searchParams.serverId
+    query.serverId && servers.some((s) => s.id === query.serverId)
+      ? query.serverId
       : null;
   const defaultServerId = validParam ?? servers[0]?.id ?? "";
 

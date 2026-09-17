@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
 export default async function EditEventPage({
   params,
 }: {
-  params: { eventId: string };
+  params: Promise<{ eventId: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect(`/login?next=/events/${params.eventId}/edit`);
-  if (!canReview(user)) redirect(`/events/${params.eventId}`);
+  if (!user) redirect(`/login?next=/events/${(await params).eventId}/edit`);
+  if (!canReview(user)) redirect(`/events/${(await params).eventId}`);
 
   const event = await prisma.event.findUnique({
-    where: { id: params.eventId },
+    where: { id: (await params).eventId },
     include: { server: { select: { id: true, name: true } } },
   });
   if (!event) notFound();

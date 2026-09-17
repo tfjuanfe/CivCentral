@@ -2,25 +2,18 @@ import "server-only";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
+import { accountIsActive, passwordVersion, sessionSecret } from "./account-security";
 import { prisma } from "./db";
 import type { AccountStatus, Role, SessionUser } from "./types";
 
 const COOKIE_NAME = "civcentral_session";
-const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const MAX_AGE = 60 * 60 * 24 * 30;
 
-// Resolve the signing secret at request time. In production we refuse to fall
-// back to the public dev string: a missing AUTH_SECRET must fail loudly rather
-// than sign sessions with a secret that's visible in the repo (which would let
-// anyone forge a session for any user, including an archivist).
 function authSecret(): Uint8Array {
-  const secret = process.env.AUTH_SECRET;
-  if (secret) return new TextEncoder().encode(secret);
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "AUTH_SECRET is not set. Refusing to sign or verify sessions with an insecure fallback in production.",
-    );
-  }
-  return new TextEncoder().encode("dev-only-insecure-secret-change-me");
+  return sessionSecret(
+    process.env.AUTH_SECRET,
+    process.env.NODE_ENV === "production",
+  );
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -31,6 +24,7 @@ export async function verifyPassword(
   password: string,
   hash: string,
 ): Promise<boolean> {
+  if (typeof password !== "string" || password.length > 200) return false;
   return bcrypt.compare(password, hash);
 }
 
@@ -46,14 +40,19 @@ export interface SessionCookie {
   };
 }
 
-// Build the signed session cookie as plain data.
-//
-// Server actions can call cookies().set() directly, but a route handler that
-// returns a NextResponse redirect (the OAuth callback) has to set the cookie on
-// that response instead. Returning the cookie rather than setting it lets both
-// use the exact same token and flags.
+// Return cookie data so route handlers such as the Discord callback can set
+// the same hardened session cookie on their redirect response.
 export async function sessionCookie(userId: string): Promise<SessionCookie> {
-  const token = await new SignJWT({ uid: userId })
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { passwordHash: true, status: true },
+  });
+  if (!user || !accountIsActive(user)) throw new Error("UNAUTHENTICATED");
+
+  const token = await new SignJWT({
+    uid: userId,
+    pv: passwordVersion(user.passwordHash),
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
@@ -74,27 +73,29 @@ export async function sessionCookie(userId: string): Promise<SessionCookie> {
 
 export async function createSession(userId: string): Promise<void> {
   const { name, value, options } = await sessionCookie(userId);
-  cookies().set(name, value, options);
+  (await cookies()).set(name, value, options);
 }
 
-export function destroySession(): void {
-  cookies().delete(COOKIE_NAME);
+export async function destroySession(): Promise<void> {
+  (await cookies()).delete(COOKIE_NAME);
 }
 
-// Returns the logged-in user, or null for anonymous readers.
 export async function getCurrentUser(): Promise<SessionUser | null> {
-  const token = cookies().get(COOKIE_NAME)?.value;
+  const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
 
   try {
-    const { payload } = await jwtVerify(token, authSecret());
-    const uid = payload.uid as string | undefined;
-    if (!uid) return null;
+    const { payload } = await jwtVerify(token, authSecret(), {
+      algorithms: ["HS256"],
+    });
+    const uid = payload.uid;
+    if (typeof uid !== "string" || !uid) return null;
 
     const user = await prisma.user.findUnique({
       where: { id: uid },
       select: {
         id: true,
+        passwordHash: true,
         username: true,
         role: true,
         trusted: true,
@@ -105,16 +106,18 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         suspendedUntil: true,
       },
     });
-    if (!user) return null;
+    if (
+      !user ||
+      !accountIsActive(user) ||
+      payload.pv !== passwordVersion(user.passwordHash)
+    ) {
+      return null;
+    }
 
-    // A timed suspension expires on its own: the row still records it, but we
-    // stop treating the account as suspended once suspendedUntil has passed,
-    // so no scheduled job is needed to restore access. A ban never lapses.
     const status = user.status as AccountStatus;
     const suspended =
-      status === "banned" ||
-      (status === "suspended" &&
-        (user.suspendedUntil === null || user.suspendedUntil > new Date()));
+      status === "suspended" &&
+      (user.suspendedUntil === null || user.suspendedUntil > new Date());
 
     return {
       id: user.id,

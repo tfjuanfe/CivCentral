@@ -1,5 +1,6 @@
 "use server";
 
+import { accountIsActive } from "@/lib/account-security";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
@@ -28,7 +29,7 @@ export async function register(
   password: string,
   rawEmail?: string,
 ): Promise<AuthResult> {
-  const rl = await rateLimit(`register:${clientIp()}`, 5, 3600);
+  const rl = await rateLimit(`register:${await clientIp()}`, 5, 3600);
   if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
 
   username = username.trim();
@@ -41,8 +42,8 @@ export async function register(
   if (password.length < 8) {
     return { ok: false, error: "Password must be at least 8 characters." };
   }
-  if (password.length > 200) {
-    return { ok: false, error: "Password is too long." };
+  if (Buffer.byteLength(password, "utf8") > 72) {
+    return { ok: false, error: "Password must be at most 72 UTF-8 bytes." };
   }
 
   // Email is optional at signup, but if supplied it must be valid and unused.
@@ -93,7 +94,7 @@ export async function login(
   username: string,
   password: string,
 ): Promise<AuthResult> {
-  const rl = await rateLimit(`login:${clientIp()}`, 10, 300);
+  const rl = await rateLimit(`login:${await clientIp()}`, 10, 300);
   if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
 
   username = username.trim();
@@ -104,7 +105,7 @@ export async function login(
     password,
     user?.passwordHash ?? DUMMY_HASH,
   );
-  if (!user || !passwordOk) {
+  if (!user || !passwordOk || !accountIsActive(user)) {
     return { ok: false, error: "Invalid username or password." };
   }
 
@@ -113,7 +114,7 @@ export async function login(
 }
 
 export async function logout(): Promise<void> {
-  destroySession();
+  await destroySession();
   revalidatePath("/", "layout");
   redirect("/");
 }

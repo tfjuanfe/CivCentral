@@ -12,8 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function NewEntryPage({
   searchParams,
 }: {
-  searchParams: { eventId?: string; type?: string; layer?: string };
+  searchParams: Promise<{ eventId?: string; type?: string; layer?: string }>;
 }) {
+  const query = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/entries/new");
   if (!canContribute(user)) redirect("/");
@@ -32,16 +33,16 @@ export default async function NewEntryPage({
   }
 
   const defaultEventId =
-    searchParams.eventId && events.some((e) => e.id === searchParams.eventId)
-      ? searchParams.eventId
+    query.eventId && events.some((e) => e.id === query.eventId)
+      ? query.eventId
       : events[0].id;
   const defaultType: EntryType = ENTRY_TYPES.includes(
-    searchParams.type as EntryType,
+    query.type as EntryType,
   )
-    ? (searchParams.type as EntryType)
+    ? (query.type as EntryType)
     : "civilization";
   const defaultLayer: Layer =
-    searchParams.layer === "account" ? "account" : "record";
+    query.layer === "account" ? "account" : "record";
 
   return (
     <>

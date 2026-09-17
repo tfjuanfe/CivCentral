@@ -9,6 +9,9 @@ import { TypeBadge, LayerBadge, StatusBadge, DisputedTag } from "@/components/Ba
 import EmailVerification from "@/components/EmailVerification";
 import AccountSettings from "@/components/AccountSettings";
 import { isDiscordConfigured } from "@/lib/discord";
+import AvatarEditor from "@/components/AvatarEditor";
+import ContributionBadge from "@/components/ContributionBadge";
+import { canContributeNow } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +126,7 @@ export default async function MyContributionsPage() {
   const pending = entries.filter((e) => e.status === "pending");
   const published = entries.filter((e) => e.status === "published");
   const needsAttention = drafts.filter((e) => e.reviewFeedback);
+  const profile = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarUrl: true } });
 
   return (
     <>
@@ -134,6 +138,12 @@ export default async function MyContributionsPage() {
       </p>
 
       <EmailVerification email={user.email} verified={user.emailVerified} />
+      <section className="card" style={{ marginBlock: 20 }}>
+        <h2 className="section-title">Contributor progress</h2>
+        <ContributionBadge count={published.length} showProgress />
+        <Link href={`/users/${user.username}`}>View your public profile</Link>
+      </section>
+      <AvatarEditor username={user.username} initialValue={profile?.avatarUrl ?? null} canUpload={canContributeNow(user)} />
 
       {needsAttention.length > 0 && (
         <div className="card" style={{ borderLeft: "5px solid var(--disputed)" }}>

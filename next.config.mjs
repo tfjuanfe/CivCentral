@@ -12,7 +12,8 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
   "font-src 'self' data:",
-  "connect-src 'self'",
+  "connect-src 'self' https://*.r2.cloudflarestorage.com",
+  "media-src 'self' https:",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -35,10 +36,8 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  // Allow remote evidence/infobox images from any host (URL-only attachments).
-  images: {
-    remotePatterns: [{ protocol: "https", hostname: "**" }],
-  },
+  // Media uses native browser elements; do not expose an arbitrary-host image proxy.
+  images: { unoptimized: true },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

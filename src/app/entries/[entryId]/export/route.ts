@@ -22,10 +22,10 @@ function isoDate(d: Date | string): string {
 // downloadable Markdown file. Only published content is included.
 export async function GET(
   _req: Request,
-  { params }: { params: { entryId: string } },
+  { params }: { params: Promise<{ entryId: string }> },
 ) {
   const anchor = await prisma.entry.findUnique({
-    where: { id: params.entryId },
+    where: { id: (await params).entryId },
     include: { event: { include: { server: true } } },
   });
   if (!anchor) return new Response("Not found", { status: 404 });

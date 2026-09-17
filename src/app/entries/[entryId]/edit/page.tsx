@@ -12,13 +12,13 @@ export const dynamic = "force-dynamic";
 export default async function EditEntryPage({
   params,
 }: {
-  params: { entryId: string };
+  params: Promise<{ entryId: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect(`/login?next=/entries/${params.entryId}/edit`);
+  if (!user) redirect(`/login?next=/entries/${(await params).entryId}/edit`);
 
   const entry = await prisma.entry.findUnique({
-    where: { id: params.entryId },
+    where: { id: (await params).entryId },
     include: {
       evidence: true,
       event: { include: { server: { select: { name: true } } } },

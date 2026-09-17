@@ -40,11 +40,11 @@ interface SubjectSummary {
 export default async function EventPage({
   params,
 }: {
-  params: { eventId: string };
+  params: Promise<{ eventId: string }>;
 }) {
   const [event, user] = await Promise.all([
     prisma.event.findUnique({
-      where: { id: params.eventId },
+      where: { id: (await params).eventId },
       include: {
         server: true,
         owner: { select: { username: true } },

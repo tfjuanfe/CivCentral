@@ -10,14 +10,14 @@ export const dynamic = "force-dynamic";
 export default async function EditServerPage({
   params,
 }: {
-  params: { serverId: string };
+  params: Promise<{ serverId: string }>;
 }) {
   const user = await getCurrentUser();
-  if (!user) redirect(`/login?next=/servers/${params.serverId}/edit`);
-  if (!canReview(user)) redirect(`/servers/${params.serverId}`);
+  if (!user) redirect(`/login?next=/servers/${(await params).serverId}/edit`);
+  if (!canReview(user)) redirect(`/servers/${(await params).serverId}`);
 
   const server = await prisma.server.findUnique({
-    where: { id: params.serverId },
+    where: { id: (await params).serverId },
   });
   if (!server) notFound();
 

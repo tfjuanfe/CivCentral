@@ -5,11 +5,13 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import {
   getCurrentUser,
+  createSession,
   destroySession,
   hashPassword,
   verifyPassword,
 } from "@/lib/auth";
 import { rateLimit, retryMessage } from "@/lib/ratelimit";
+import { presetAvatar } from "@/lib/avatars";
 
 export type ProfileResult = { ok: true } | { ok: false; error: string };
 
@@ -40,6 +42,21 @@ export async function unlinkDiscord(): Promise<ProfileResult> {
     where: { id: session.id },
     data: { discordId: null, discordUsername: null, discordAvatar: null },
   });
+  revalidatePath("/me");
+  return { ok: true };
+}
+
+// Uploaded avatars are set only by the validated upload endpoint. This action
+// accepts a preset or initials, never an arbitrary remote URL.
+export async function updateAvatar(value: string | null): Promise<ProfileResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You must be logged in." };
+  if (value !== null && (typeof value !== "string" || !presetAvatar(value)))
+    return { ok: false, error: "Choose one of the preset avatars." };
+  const rl = await rateLimit(`avatar:${user.id}`, 30, 600);
+  if (!rl.ok) return { ok: false, error: retryMessage(rl.retryAfter) };
+  await prisma.user.update({ where: { id: user.id }, data: { avatarUrl: value } });
+  revalidatePath(`/users/${user.username}`);
   revalidatePath("/me");
   return { ok: true };
 }
@@ -91,8 +108,8 @@ export async function changePassword(
 
   if (next.length < 8)
     return { ok: false, error: "New password must be at least 8 characters." };
-  if (next.length > 200)
-    return { ok: false, error: "New password is too long." };
+  if (Buffer.byteLength(next, "utf8") > 72)
+    return { ok: false, error: "New password must be at most 72 UTF-8 bytes." };
   if (next === current)
     return {
       ok: false,
@@ -103,6 +120,7 @@ export async function changePassword(
     where: { id: session.id },
     data: { passwordHash: await hashPassword(next) },
   });
+  await createSession(session.id);
   return { ok: true };
 }
 
@@ -169,6 +187,8 @@ export async function deleteAccount(
         discordAvatar: null,
         avatarUrl: null,
         bio: "",
+        status: "banned",
+        suspendedUntil: null,
         trusted: false,
         eventHost: false,
         role: "contributor",
@@ -176,7 +196,7 @@ export async function deleteAccount(
     });
   }
 
-  destroySession();
+  await destroySession();
   revalidatePath("/", "layout");
   return { ok: true };
 }

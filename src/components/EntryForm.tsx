@@ -6,6 +6,7 @@ import { ENTRY_TYPES, INFOBOX_FIELDS, TYPE_LABELS } from "@/lib/templates";
 import type { EntryType, Layer } from "@/lib/types";
 import { createEntry, updateEntry } from "@/app/actions/entries";
 import Icon from "./Icon";
+import MediaUpload from "./MediaUpload";
 
 interface EventOption {
   id: string;
@@ -51,6 +52,7 @@ export default function EntryForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const fields = INFOBOX_FIELDS[type];
 
@@ -75,6 +77,7 @@ export default function EntryForm({
   }
 
   async function submit(asDraft: boolean) {
+    if (uploading || busy) return;
     setError(null);
     setBusy(true);
     try {
@@ -250,6 +253,8 @@ export default function EntryForm({
           <p className="hint" style={{ marginTop: 0 }}>
             Record entries require at least one image URL or source link.
           </p>
+          <MediaUpload disabled={busy || uploading || evidence.filter(e => e.url.trim()).length >= 20} onBusyChange={setUploading}
+            onUploaded={(url, name) => setEvidence(prev => [...prev.filter(e => e.url.trim()), { url, caption: name.slice(0, 300) }])} />
           {evidence.map((ev, i) => (
             <div className="evidence-row" key={i}>
               <input
@@ -283,6 +288,8 @@ export default function EntryForm({
       {/* Body */}
       <div className="field">
         <label htmlFor="body">Body (Markdown)</label>
+        <MediaUpload disabled={busy || uploading} onBusyChange={setUploading} onUploaded={(url) =>
+          setBody(prev => `${prev}\n\n![Uploaded media](${url})\n`)} />
         <textarea
           id="body"
           rows={14}
@@ -301,13 +308,13 @@ export default function EntryForm({
       </div>
 
       <div className="btn-row">
-        <button type="submit" className="btn" disabled={busy}>
+        <button type="submit" className="btn" disabled={busy || uploading}>
           {busy ? "Saving…" : isEdit ? "Save changes" : "Submit entry"}
         </button>
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={busy}
+          disabled={busy || uploading}
           onClick={() => submit(true)}
         >
           Save as draft
