@@ -102,13 +102,14 @@ async function loadTarget(
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: { show?: string };
+  searchParams: Promise<{ show?: string }>;
 }) {
+  const query = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/review/reports");
   if (!canReview(user)) redirect("/");
 
-  const showClosed = searchParams.show === "closed";
+  const showClosed = query.show === "closed";
 
   const [reports, openCount, closedCount, grouped] = await Promise.all([
     prisma.report.findMany({

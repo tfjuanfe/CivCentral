@@ -56,7 +56,13 @@ describe("account security", () => {
     expect(passwordVersion("old-bcrypt-hash")).not.toBe(passwordVersion("new-bcrypt-hash"));
   });
   it("rejects missing, short and published default production secrets", () => {
-    for (const secret of [undefined, "short", "change-me-to-a-long-random-string", "dev-only-insecure-secret-change-me"])
+    for (const secret of [
+      undefined,
+      "short",
+      "change-me-to-a-long-random-string",
+      "dev-only-insecure-secret-change-me",
+      "c464204e06117aea5093c4abbca023f9edbe424d45b4866476ed7c17e5f57a22",
+    ])
       expect(() => sessionSecret(secret, true)).toThrow();
     expect(sessionSecret("random-per-deployment-secret-of-at-least-32-characters", true).length).toBeGreaterThan(32);
   });

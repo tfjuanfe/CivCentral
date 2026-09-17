@@ -12,17 +12,18 @@ export const metadata: Metadata = { title: "Event page settings | CivCentral" };
 export default async function EventSettingsPage({
   params,
 }: {
-  params: { eventId: string };
+  params: Promise<{ eventId: string }>;
 }) {
+  const { eventId } = await params;
   const user = await getCurrentUser();
-  if (!user) redirect(`/login?next=/events/${params.eventId}/settings`);
+  if (!user) redirect(`/login?next=/events/${eventId}/settings`);
 
   const event = await prisma.event.findUnique({
-    where: { id: params.eventId },
+    where: { id: eventId },
     include: { owner: { select: { username: true } } },
   });
   if (!event) notFound();
-  if (!canManageEvent(user, event)) redirect(`/events/${params.eventId}`);
+  if (!canManageEvent(user, event)) redirect(`/events/${eventId}`);
 
   const ratingCount = await prisma.eventRating.count({
     where: { eventId: event.id },
